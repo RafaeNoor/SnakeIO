@@ -4,16 +4,21 @@ import time
 import random
 import curses
 import socket
-
+import asyncio
 import threading
+import pickle
 
 HOST = '127.0.0.1'
-PORT = 65432
+PORT = 8888 
 
 
 
-#sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#sock.connect((HOST,PORT))
+
+counter = 0
+done = False
+move = 'right'
+
+server_message = ""
 
 
 class Snake(object):
@@ -67,7 +72,6 @@ def main():
 
     snake = Snake()
 
-
     alive = True
 
 
@@ -90,27 +94,33 @@ def main():
 
         for (x,y) in snake.body:
             stdscr.addstr(y,x,"#")
-            stdscr.addstr(10,10,str(snake.body))
+            #stdscr.addstr(10,10,str(snake.body))
 
         stdscr.addstr(11,11,"("+str(curses.LINES)+","+str(curses.COLS)+")")
 
         global counter
-        stdscr.addstr(20,20,str(counter))
+        stdscr.addstr(10,20,str(counter))
 
         key = stdscr.getch()
+
+        global move
 
         if key == curses.KEY_DOWN:
             snake.vx = 0
             snake.vy = 1
+            move = "down"
         elif key == curses.KEY_UP:
             snake.vx = 0
             snake.vy = -1
+            move = "up"
         elif key == curses.KEY_LEFT:
             snake.vx = -1
             snake.vy = 0
+            move = "left"
         elif key == curses.KEY_RIGHT:
             snake.vx = 1
             snake.vy = 0
+            move = "right"
 
         alive = snake.checkAlive()
 
@@ -122,17 +132,68 @@ def main():
     global done
     done = True
 
-counter = 0
-done = False
 
-def alt_thread(): # testing if threads can mutate global variables (answer is yes)
+class SnakeClientProtocol(asyncio.Protocol):
+
+    def __init__(self, message, on_con_lost, loop):
+        self.message = message
+        self.loop = loop
+        self.on_con_lost = on_con_lost
+
+
+    def connection_made(self, transport):
+        transport.write(pickle.dumps(self.message))
+        self.transport = transport
+
+
+    def data_received(self, data):
+        js = pickle.loads(data) # string to json
+
+        global server_message
+        server_message = js
+
+
+
+    def connection_lost(self, exc):
+        self.on_con_lost.set_result(True)
+
+
+async def updateDone():
+    loop = asyncio.get_running_loop()
+    on_con_lost = loop.create_future()
+
+    transport, protocol = await loop.create_connection(
+            lambda: SnakeClientProtocol('Pinging server', on_con_lost, loop),
+            HOST, PORT)
+
+    old_move = ""
+
     global done
     while not done:
-        time.sleep(1)
+        await asyncio.sleep(1)
         global counter
+        global server_message
+        global move
+        
         counter += 1
 
+        packet = {"counter":counter,"move":move, 
+                "done":done}
+        if old_move != move: # Update only if move changed OR whenever we deem necessary
+            transport.write(pickle.dumps(packet));
+            old_move = move
+
+
+
+def alt_thread(): # testing if threads can mutate global variables (answer is yes)
+    asyncio.run(updateDone());
+
+
+#  Game running Locally
 main_thread = threading.Thread(target = main, args = ())
+#  Asycronous Server Communication
 another = threading.Thread(target = alt_thread, args = ())
+
+#  Start Both Threads
 main_thread.start()
 another.start()
