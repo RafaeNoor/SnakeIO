@@ -24,6 +24,8 @@ class SnakeServerProtocol(asyncio.Protocol):
         conList.append(self.transport)
         print('Number of Connections: {}'.format(numCon))
 
+        self.send_all(pickle.dumps({"mode":"add","player":str(peername)}))
+
 
     def connection_lost(self, exc):
         print('Lost a connection from client...')
@@ -35,14 +37,21 @@ class SnakeServerProtocol(asyncio.Protocol):
 
 
     def data_received(self, data):
-        message = pickle.loads(data) #data.decode()
-        print('Data received from {}: {!r}'.format(self.transport.get_extra_info('peername'),message))
+        message = pickle.loads(data) 
+        #print('Data received from {}:{!r}'.format(self.transport.get_extra_info('peername'),message),type(message))
 
-        prepare =  {"sender":self.transport.get_extra_info('peername'),
-                "data": message}
-
-        packet = pickle.dumps(prepare) #  Arbritrary dictionary for snake game
-        self.send_all(packet)
+        if isinstance(message,dict):
+            if message["mode"] == "move":
+                prepare =  {"player":str(self.transport.get_extra_info('peername')), "body": message["body"],"mode":"move"}
+                packet = pickle.dumps(prepare) #  Arbritrary dictionary for snake game
+                #print("Sending",prepare)
+                self.send_all(packet)
+            elif message["mode"] == "dead":
+               print("Disconnecting player...") 
+               packet = {"mode":"dead","player":str(self.transport.get_extra_info('peername'))}
+               self.send_all(pickle.dumps(packet))
+        else:
+            print(message)
 
     def send_all(self,data):
         global conList

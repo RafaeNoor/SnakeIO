@@ -14,11 +14,9 @@ PORT = 8888
 
 
 
-counter = 0
 done = False
-move = 'right'
+opponents = {}
 
-server_message = ""
 
 
 class Snake(object):
@@ -32,6 +30,8 @@ class Snake(object):
 
     def getCoord(self):
         return self.head_x, self.head_y
+    def getBody(self):
+        return [(self.head_x,self.head_y)] + self.body
 
     def updatePos(self):
         for i in range(self.len-1,0,-1):
@@ -62,6 +62,7 @@ fps = 10
 sleeptime = 1/fps
 
 
+body = []
 
 def main():
     stdscr = curses.initscr()
@@ -87,44 +88,41 @@ def main():
             stdscr.addstr(j,0,"+")
             stdscr.addstr(j,curses.COLS-2,"+")
 
+        for opp,bd in opponents.items():
+            if bd == []:
+                continue
 
-        head_x,head_y = snake.getCoord()
-        stdscr.addstr(head_y,head_x,"@")
+            (o_x,o_y) = bd[0]
+            stdscr.addstr(o_y,o_x,"@")
+            for (x,y) in bd[1:]:
+                stdscr.addstr(y,x,"#")
 
+        #stdscr.addstr(11,11,"("+str(curses.LINES)+","+str(curses.COLS)+")")
 
-        for (x,y) in snake.body:
-            stdscr.addstr(y,x,"#")
-            #stdscr.addstr(10,10,str(snake.body))
-
-        stdscr.addstr(11,11,"("+str(curses.LINES)+","+str(curses.COLS)+")")
-
-        global counter
-        stdscr.addstr(10,20,str(counter))
 
         key = stdscr.getch()
 
-        global move
 
         if key == curses.KEY_DOWN:
             snake.vx = 0
             snake.vy = 1
-            move = "down"
         elif key == curses.KEY_UP:
             snake.vx = 0
             snake.vy = -1
-            move = "up"
         elif key == curses.KEY_LEFT:
             snake.vx = -1
             snake.vy = 0
-            move = "left"
         elif key == curses.KEY_RIGHT:
             snake.vx = 1
             snake.vy = 0
-            move = "right"
 
         alive = snake.checkAlive()
 
+
         snake.updatePos()
+
+        global body
+        body = snake.getBody()
 
         time.sleep(sleeptime)
 
@@ -146,19 +144,27 @@ class SnakeClientProtocol(asyncio.Protocol):
         self.transport = transport
 
 
+
     def data_received(self, data):
-        js = pickle.loads(data) # string to json
+        content = pickle.loads(data) # string to json
+        global opponents
 
-        global server_message
-        server_message = js
-
+        if content["mode"] == "add":
+            #if content["player"] == str(self.transport.get_extra_info('peername')):
+            #    return
+            opponents[content["player"]] = []
+        elif content["mode"] == "move":
+            #print("someone made a move")
+            opponents[content["player"]] = content["body"]
+        elif content["mode"] == "dead":
+            opponents[content["player"]] = []
 
 
     def connection_lost(self, exc):
         self.on_con_lost.set_result(True)
 
 
-async def updateDone():
+async def network_conn():
     loop = asyncio.get_running_loop()
     on_con_lost = loop.create_future()
 
@@ -166,34 +172,29 @@ async def updateDone():
             lambda: SnakeClientProtocol('Pinging server', on_con_lost, loop),
             HOST, PORT)
 
-    old_move = ""
 
     global done
     while not done:
-        await asyncio.sleep(1)
-        global counter
-        global server_message
-        global move
-        
-        counter += 1
+        await asyncio.sleep(0.05)
+        global body
+        packet = {"mode":"move","body":body}
+        transport.write(pickle.dumps(packet))
 
-        packet = {"counter":counter,"move":move, 
-                "done":done}
-        if old_move != move: # Update only if move changed OR whenever we deem necessary
-            transport.write(pickle.dumps(packet));
-            old_move = move
+    await asyncio.sleep(0.5)
+    print("Screen Closed")
+    transport.write(pickle.dumps({"mode":"dead"}))
 
 
 
 def alt_thread(): # testing if threads can mutate global variables (answer is yes)
-    asyncio.run(updateDone());
+    asyncio.run(network_conn());
 
 
 #  Game running Locally
 main_thread = threading.Thread(target = main, args = ())
 #  Asycronous Server Communication
-another = threading.Thread(target = alt_thread, args = ())
+net = threading.Thread(target = alt_thread, args = ())
 
 #  Start Both Threads
 main_thread.start()
-another.start()
+net.start()
