@@ -88,16 +88,17 @@ def main():
             stdscr.addstr(j,0,"+")
             stdscr.addstr(j,curses.COLS-2,"+")
 
-        for opp,bd in opponents.items():
+        for opp,bd in opponents.items(): #opponents includes rendering me as well
             if bd == []:
                 continue
+
+            #Could add collision with other check here. Check if my head == other posision
 
             (o_x,o_y) = bd[0]
             stdscr.addstr(o_y,o_x,"@")
             for (x,y) in bd[1:]:
                 stdscr.addstr(y,x,"#")
 
-        #stdscr.addstr(11,11,"("+str(curses.LINES)+","+str(curses.COLS)+")")
 
 
         key = stdscr.getch()
@@ -156,6 +157,8 @@ class SnakeClientProtocol(asyncio.Protocol):
         elif content["mode"] == "move":
             #print("someone made a move")
             opponents[content["player"]] = content["body"]
+
+            # add collision check
         elif content["mode"] == "dead":
             opponents[content["player"]] = []
 
