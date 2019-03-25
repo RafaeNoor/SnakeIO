@@ -41,6 +41,9 @@ class Snake(object):
         self.head_x += self.vx
         self.head_y += self.vy
 
+        global myhead
+        myhead = (self.head_x, self.head_y)
+
     def checkAlive(self):
         out_of_bounds = not ((self.head_x > 0 and self.head_x < curses.COLS -2 ) and (self.head_y >0 and self.head_y < curses.LINES -2))
 
@@ -61,7 +64,8 @@ fps = 10
 
 sleeptime = 1/fps
 
-
+myname = ""
+myhead = (-1,-1)
 body = []
 
 def main():
@@ -132,12 +136,14 @@ def main():
     done = True
 
 
+
 class SnakeClientProtocol(asyncio.Protocol):
 
     def __init__(self, message, on_con_lost, loop):
         self.message = message
         self.loop = loop
         self.on_con_lost = on_con_lost
+        self.name = ""
 
 
     def connection_made(self, transport):
@@ -149,16 +155,22 @@ class SnakeClientProtocol(asyncio.Protocol):
     def data_received(self, data):
         content = pickle.loads(data) # string to json
         global opponents
+        global done
+        global myhead
 
-        if content["mode"] == "add":
-            #if content["player"] == str(self.transport.get_extra_info('peername')):
-            #    return
+
+        #print("my name is {}, recieved packet from{}".format(self.name,content["player"]))
+        if content["mode"] == "user":
+            self.name = content["name"]
+        elif content["mode"] == "add":
             opponents[content["player"]] = []
         elif content["mode"] == "move":
             #print("someone made a move")
             opponents[content["player"]] = content["body"]
-
-            # add collision check
+            
+            if (content["player"] != self.name) and len([myhead] + content["body"]) != len(set([myhead] + content["body"])):
+                print("{} player killed me".format(content["player"]))
+                done = True
         elif content["mode"] == "dead":
             opponents[content["player"]] = []
 

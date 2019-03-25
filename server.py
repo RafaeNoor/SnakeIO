@@ -17,6 +17,9 @@ class SnakeServerProtocol(asyncio.Protocol):
         print('Connection from {}'.format(peername))
         self.transport = transport
 
+        self.transport.write(pickle.dumps({"mode":"user","player": str(peername),"name":str(peername)}))
+
+
         global numCon
         numCon += 1
 
